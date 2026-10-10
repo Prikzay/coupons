@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>恋爱卡券管理后台</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #fdf3f6;
+    color: #5a4440;
+    padding: 20px 14px 60px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  h2 { font-size: 15px; margin: 26px 0 10px; color: #e8638c; }
+  .sub { font-size: 13px; color: #b08f88; margin-bottom: 20px; }
+
+  #login {
+    background: #fff;
+    border-radius: 12px;
+    padding: 30px 24px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    text-align: center;
+  }
+  #login input {
+    width: 100%;
+    padding: 12px;
+    font-size: 15px;
+    border: 1px solid #f0cdd8;
+    border-radius: 8px;
+    margin-bottom: 14px;
+    text-align: center;
+  }
+  #login button, .refresh-btn {
+    padding: 11px 34px;
+    border: none;
+    border-radius: 8px;
+    background: #e8638c;
+    color: #fff;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  .refresh-btn { font-size: 13px; padding: 8px 20px; margin-bottom: 14px; }
+
+  /* 待确认请求卡片 */
+  .req-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .req-card .info { flex: 1; min-width: 180px; }
+  .req-card .cname { font-weight: 600; font-size: 15px; color: #e8638c; }
+  .req-card .rtime { font-size: 12px; color: #b08f88; margin-top: 2px; }
+  .req-card button {
+    padding: 8px 18px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    color: #fff;
+  }
+  .btn-confirm { background: #4caf7d; }
+  .btn-reject { background: #b0a6a3; }
+  .btn-confirm:disabled, .btn-reject:disabled { opacity: .5; cursor: default; }
+
+  /* 发放管理：12 种券 */
+  .stock-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    font-size: 13px;
+  }
+  .stock-table th, .stock-table td { padding: 9px 8px; text-align: left; border-bottom: 1px solid #f7e8ed; white-space: nowrap; }
+  .stock-table th { background: #fbeef2; font-weight: 600; color: #a3736a; }
+  .stock-table .cname { font-weight: 600; }
+  .stock-table .nums { color: #8a6552; }
+  .stock-table input {
+    width: 58px;
+    padding: 5px 6px;
+    border: 1px solid #f0cdd8;
+    border-radius: 6px;
+    font-size: 13px;
+    text-align: center;
+  }
+  .stock-table .grant-btn {
+    padding: 5px 12px;
+    border: none;
+    border-radius: 6px;
+    background: #e8638c;
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .stock-table .grant-btn:disabled { opacity: .5; cursor: default; }
+
+  /* 使用记录表 */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    font-size: 13px;
+  }
+  th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid #f7e8ed; }
+  th { background: #fbeef2; font-weight: 600; color: #a3736a; white-space: nowrap; }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #fff;
+    white-space: nowrap;
+  }
+  .tag-pending { background: #d9a404; }
+  .tag-confirmed { background: #4caf7d; }
+  .tag-rejected { background: #b0a6a3; }
+  .time-sub { color: #b8a29c; font-size: 11px; }
+  #err, #data-err { margin-top: 16px; color: #c0392b; font-size: 14px; }
+  #data-err { margin-bottom: 14px; margin-top: 0; }
+  .empty { color: #b8a29c; padding: 14px 0; text-align: center; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎟️ 恋爱卡券管理后台</h1>
+  <div class="sub">发放券、确认她的用券申请</div>
+
+  <div id="login">
+    <div style="margin-bottom:16px;color:#8a6552;font-size:14px">请输入管理密码</div>
+    <input type="password" id="pwd" placeholder="密码">
+    <button id="btn-login">进入后台</button>
+    <div id="err"></div>
+  </div>
+
+  <div id="data" style="display:none">
+    <button class="refresh-btn" id="btn-refresh">↻ 刷新</button>
+    <div id="data-err"></div>
+
+    <h2>⏳ 待确认的用券申请</h2>
+    <div id="pending-list"><div class="empty">加载中…</div></div>
+
+    <h2>🎁 券库存与发放</h2>
+    <table class="stock-table">
+      <thead>
+        <tr><th>券种</th><th>已发</th><th>已用</th><th>待确认</th><th>剩余</th><th>发放</th></tr>
+      </thead>
+      <tbody id="stock-tbody"></tbody>
+    </table>
+
+    <h2>📜 使用记录（最近 200 条）</h2>
+    <table>
+      <thead><tr><th>券种</th><th>状态</th><th>申请时间</th><th>处理时间</th></tr></thead>
+      <tbody id="log-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+/* ======== 配置：云函数中转地址 + 管理密码 ======== */
+var PROXY = "https://prizay-d5g0umrw5133d1dbc.service.tcloudbase.com/coupons-proxy";
+var ADMIN_PASSWORD = "123456";
+
+/* 券名（和女朋友页 couponList 一致） */
+var couponNames = {
+  1: "亲亲券", 2: "抱抱券", 3: "使唤券", 4: "陪聊券",
+  5: "免生气券", 6: "投喂券", 7: "约会选择权券", 8: "按摩券",
+  9: "熬夜陪伴券", 10: "夸夸券", 11: "耍赖券", 12: "心愿特权券"
+};
+var statusNames = { pending: "待确认", confirmed: "已生效", rejected: "已拒绝" };
+
+var overviewData = null; // 最近一次 /admin/overview 数据
+
+/* ---------- 工具 ---------- */
+function fmtTime(s) {
+  if (!s) return "-";
+  var d = new Date(s);
+  function p(n) { return n < 10 ? "0" + n : n; }
+  return (d.getMonth() + 1) + "-" + p(d.getDate()) + " "
+    + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+}
+function errBox(msg) {
+  var el = document.getElementById("data-err");
+  el.textContent = msg || "";
+}
+
+/* ---------- 加载概览 ---------- */
+function load() {
+  errBox("");
+  document.getElementById("pending-list").innerHTML = '<div class="empty">加载中…</div>';
+  fetch(PROXY + "/admin/overview", { headers: { "X-Admin-Password": ADMIN_PASSWORD } })
+    .then(function (r) {
+      if (r.status === 401) throw new Error("密码不对或已失效，请刷新页面重新登录");
+      if (!r.ok) throw new Error("接口返回 " + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      overviewData = data;
+      renderPending(data.requests || []);
+      renderStock(data.coupons || []);
+      renderLog(data.requests || []);
+    })
+    .catch(function (err) {
+      document.getElementById("pending-list").innerHTML = "";
+      errBox("加载失败：" + (err.message || err) + "，请稍后点「↻ 刷新」重试");
+    });
+}
+
+/* ---------- 区块 1：待确认请求 ---------- */
+function renderPending(requests) {
+  var box = document.getElementById("pending-list");
+  var pending = requests.filter(function (r) { return r.status === "pending"; });
+  if (!pending.length) {
+    box.innerHTML = '<div class="empty">暂时没有待确认的申请 🎉</div>';
+    return;
+  }
+  var html = "";
+  pending.forEach(function (r) {
+    html += '<div class="req-card">'
+      + '<div class="info">'
+      + '<div class="cname">🎟️ ' + (couponNames[r.coupon_id] || ("券 #" + r.coupon_id)) + '</div>'
+      + '<div class="rtime">申请时间：' + fmtTime(r.requested_at) + '</div>'
+      + '</div>'
+      + '<button class="btn-confirm" onclick="handle(' + r.id + ',\'confirm\')">✓ 确认生效</button>'
+      + '<button class="btn-reject" onclick="handle(' + r.id + ',\'reject\')">✕ 拒绝</button>'
+      + '</div>';
+  });
+  box.innerHTML = html;
+}
+
+/* 确认 / 拒绝 */
+function handle(requestId, action) {
+  var verb = action === "confirm" ? "确认生效" : "拒绝";
+  if (!confirm("确定要" + verb + "这条用券申请吗？")) return;
+  errBox("");
+  fetch(PROXY + "/admin/handle", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Admin-Password": ADMIN_PASSWORD },
+    body: JSON.stringify({ request_id: requestId, action: action })
+  }).then(function (r) {
+    return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+  }).then(function (res) {
+    if (!res.ok) throw new Error((res.d && res.d.error) || ("接口返回错误"));
+    load(); // 成功后整页刷新数据
+  }).catch(function (err) {
+    errBox(verb + "失败：" + (err.message || err));
+  });
+}
+
+/* ---------- 区块 2：发放管理 ---------- */
+function renderStock(coupons) {
+  var tbody = document.getElementById("stock-tbody");
+  var html = "";
+  coupons.forEach(function (c) {
+    html += '<tr>'
+      + '<td class="cname">' + (couponNames[c.id] || ("券 #" + c.id)) + '</td>'
+      + '<td class="nums">' + c.granted + '</td>'
+      + '<td class="nums">' + c.used + '</td>'
+      + '<td class="nums">' + (c.pending ? '<span style="color:#d9a404;font-weight:600">' + c.pending + '</span>' : '0') + '</td>'
+      + '<td class="nums" style="font-weight:600;color:#e8638c">' + c.remaining + '</td>'
+      + '<td>'
+      + '<input type="number" min="1" id="grant-num-' + c.id + '" value="1">'
+      + ' <button class="grant-btn" onclick="grant(' + c.id + ')">+发放</button>'
+      + '</td>'
+      + '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+/* 发放 */
+function grant(couponId) {
+  var input = document.getElementById("grant-num-" + couponId);
+  var add = parseInt(input.value, 10);
+  if (!add || add < 1) { alert("请输入大于 0 的发放数量"); return; }
+  var name = couponNames[couponId] || ("券 #" + couponId);
+  if (!confirm("确定给「" + name + "」发放 " + add + " 张吗？")) return;
+  errBox("");
+  fetch(PROXY + "/admin/grant", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Admin-Password": ADMIN_PASSWORD },
+    body: JSON.stringify({ coupon_id: couponId, add: add })
+  }).then(function (r) {
+    return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+  }).then(function (res) {
+    if (!res.ok) throw new Error((res.d && res.d.error) || "接口返回错误");
+    load();
+  }).catch(function (err) {
+    errBox("发放失败：" + (err.message || err));
+  });
+}
+
+/* ---------- 区块 3：使用记录 ---------- */
+function renderLog(requests) {
+  var tbody = document.getElementById("log-tbody");
+  if (!requests.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无记录</td></tr>';
+    return;
+  }
+  var html = "";
+  requests.forEach(function (r) {
+    html += '<tr>'
+      + '<td>' + (couponNames[r.coupon_id] || ("券 #" + r.coupon_id)) + '</td>'
+      + '<td><span class="tag tag-' + r.status + '">' + (statusNames[r.status] || r.status) + '</span></td>'
+      + '<td>' + fmtTime(r.requested_at) + '</td>'
+      + '<td>' + (r.handled_at ? fmtTime(r.handled_at) : '<span class="time-sub">未处理</span>') + '</td>'
+      + '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+/* ---------- 登录 ---------- */
+document.getElementById("btn-login").addEventListener("click", tryLogin);
+document.getElementById("pwd").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") tryLogin();
+});
+function tryLogin() {
+  var pwd = document.getElementById("pwd").value;
+  fetch(PROXY + "/admin/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: pwd })
+  }).then(function (r) {
+    return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+  }).then(function (res) {
+    if (!res.ok) throw new Error(res.d.error || "密码不对哦");
+    ADMIN_PASSWORD = pwd; // 保留给后续请求用
+    document.getElementById("login").style.display = "none";
+    document.getElementById("data").style.display = "block";
+    load();
+  }).catch(function (err) {
+    document.getElementById("err").textContent = err.message || "密码不对哦";
+  });
+}
+document.getElementById("btn-refresh").addEventListener("click", load);
+</script>
+</body>
+</html>
