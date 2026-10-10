@@ -162,7 +162,7 @@
 
     <h2>📜 使用记录（最近 200 条）</h2>
     <table>
-      <thead><tr><th>券种</th><th>状态</th><th>申请时间</th><th>处理时间</th></tr></thead>
+      <thead><tr><th>券种</th><th>状态</th><th>申请理由</th><th>申请时间</th><th>处理时间</th></tr></thead>
       <tbody id="log-tbody"></tbody>
     </table>
   </div>
@@ -184,6 +184,11 @@ var statusNames = { pending: "待确认", confirmed: "已生效", rejected: "已
 var overviewData = null; // 最近一次 /admin/overview 数据
 
 /* ---------- 工具 ---------- */
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (ch) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+  });
+}
 function fmtTime(s) {
   if (!s) return "-";
   var d = new Date(s);
@@ -232,6 +237,7 @@ function renderPending(requests) {
       + '<div class="info">'
       + '<div class="cname">🎟️ ' + (couponNames[r.coupon_id] || ("券 #" + r.coupon_id)) + '</div>'
       + '<div class="rtime">申请时间：' + fmtTime(r.requested_at) + '</div>'
+      + (r.note ? '<div class="rtime" style="color:#5a4440">📝 申请理由：' + esc(r.note) + '</div>' : '')
       + '</div>'
       + '<button class="btn-confirm" onclick="handle(' + r.id + ',\'confirm\')">✓ 确认生效</button>'
       + '<button class="btn-reject" onclick="handle(' + r.id + ',\'reject\')">✕ 拒绝</button>'
@@ -305,7 +311,7 @@ function grant(couponId) {
 function renderLog(requests) {
   var tbody = document.getElementById("log-tbody");
   if (!requests.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无记录</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无记录</td></tr>';
     return;
   }
   var html = "";
@@ -313,6 +319,7 @@ function renderLog(requests) {
     html += '<tr>'
       + '<td>' + (couponNames[r.coupon_id] || ("券 #" + r.coupon_id)) + '</td>'
       + '<td><span class="tag tag-' + r.status + '">' + (statusNames[r.status] || r.status) + '</span></td>'
+      + '<td style="max-width:160px;word-break:break-all;white-space:normal">' + esc(r.note || '-') + '</td>'
       + '<td>' + fmtTime(r.requested_at) + '</td>'
       + '<td>' + (r.handled_at ? fmtTime(r.handled_at) : '<span class="time-sub">未处理</span>') + '</td>'
       + '</tr>';
