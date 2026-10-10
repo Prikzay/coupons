@@ -166,6 +166,20 @@
   .toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
   .toolbar select { min-width: 120px; }
 
+  /* ===== 持券明细弹窗 ===== */
+  table.dm-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .dm-tbl th, .dm-tbl td { padding: 8px 6px; text-align: center; border-bottom: 1px solid #f2f4f8; }
+  .dm-tbl th { background: #f8f9fc; color: #7a8296; font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .dm-tbl td:first-child { text-align: left; font-weight: 600; white-space: nowrap; }
+  .dm-tbl .num-hl { color: #e8638c; font-weight: 700; }
+  .dm-tbl .num-dim { color: #9aa3b2; }
+  .dm-tbl .btn-op {
+    border: 1px solid #e2e6ee; border-radius: 6px; background: #fff; color: #4a7de0;
+    font-size: 12px; font-weight: 700; padding: 4px 9px; margin: 0 2px;
+  }
+  .dm-tbl .btn-op:hover { background: #f3f5f9; }
+  .dm-tbl .btn-op.del { color: #d64541; }
+
   /* ===== 弹窗 ===== */
   .modal-mask {
     display: none; position: fixed; inset: 0; z-index: 60; background: rgba(20,26,40,.5);
@@ -404,6 +418,18 @@
     <div class="modal-btns">
       <button class="btn-cancel" id="gmCancel">取消</button>
       <button class="btn-submit" id="gmSubmit">确认发放</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 持券明细弹窗 ============ -->
+<div class="modal-mask" id="detailModal">
+  <div class="modal-box" style="max-width:540px">
+    <h4>「<span id="dmUser"></span>」的持券明细</h4>
+    <div id="dmList"><div class="empty">加载中…</div></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" id="dmClose">关闭</button>
+      <button class="btn-submit" id="dmGrant">＋ 发新券</button>
     </div>
   </div>
 </div>
@@ -708,6 +734,7 @@ function loadAccounts() {
           + '<td class="nums hl">' + (a.total_granted || 0) + ' 张</td>'
           + '<td class="time-sub hidesm">' + fmtTime(a.created_at) + '</td>'
           + '<td>'
+          + '<button class="btn-ghost btn-edit" onclick="openDetail(\'' + u + '\')">明细</button>'
           + '<button class="btn-ghost btn-edit" onclick="openGrantModal(\'' + u + '\')">发券</button>'
           + '<button class="btn-ghost btn-edit" onclick="changePass(\'' + u + '\')">改密码</button>'
           + (onlyOne ? '<span class="time-sub" title="至少保留一个账号">不可删除</span>'
@@ -773,6 +800,123 @@ document.getElementById("gmSubmit").addEventListener("click", function () {
     alert("发放失败：" + (err.message || err));
   }).finally(function () { btn.disabled = false; });
 });
+
+/* ----- 持券明细弹窗 ----- */
+var detailUser = null;
+function openDetail(username) {
+  detailUser = username;
+  document.getElementById("dmUser").textContent = username;
+  renderDetail();
+  document.getElementById("detailModal").classList.add("show");
+}
+document.getElementById("dmClose").addEventListener("click", function () {
+  document.getElementById("detailModal").classList.remove("show");
+});
+document.getElementById("detailModal").addEventListener("click", function (e) {
+  if (e.target === e.currentTarget) e.currentTarget.classList.remove("show");
+});
+document.getElementById("dmGrant").addEventListener("click", function () {
+  document.getElementById("detailModal").classList.remove("show");
+  openGrantModal(detailUser);
+});
+
+function renderDetail() {
+  var box = document.getElementById("dmList");
+  box.innerHTML = '<div class="empty">加载中…</div>';
+  fetch(PROXY + "/admin/account_detail", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Admin-Password": ADMIN_PASSWORD },
+    body: JSON.stringify({ username: detailUser })
+  }).then(function (r) {
+    if (r.status === 401) throw new Error("登录已失效，请刷新页面重新登录");
+    return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+  }).then(function (res) {
+    if (!res.ok) throw new Error((res.d && res.d.error) || "接口返回错误");
+    var list = res.d.coupons || [];
+    if (!list.length) {
+      box.innerHTML = '<div class="empty">这个账号还没有持券，点下方「＋ 发新券」发放</div>';
+      return;
+    }
+    box.innerHTML = '<table class="dm-tbl"><thead><tr>'
+      + '<th>券种</th><th>发放</th><th>已用</th><th>待确认</th><th>剩余</th><th>操作</th>'
+      + '</tr></thead><tbody>'
+      + list.map(function (r) {
+        return '<tr>'
+          + '<td>' + esc(r.name) + '</td>'
+          + '<td class="num-dim">' + r.granted + '</td>'
+          + '<td class="num-dim">' + r.used + '</td>'
+          + '<td class="num-dim">' + (r.pending || 0) + '</td>'
+          + '<td class="num-hl">' + r.remaining + '</td>'
+          + '<td>'
+          + '<button class="btn-op" onclick="stockAdjust(' + r.coupon_id + ', 1)">＋</button>'
+          + '<button class="btn-op" onclick="stockAdjust(' + r.coupon_id + ', -1)">－</button>'
+          + '<button class="btn-op del" onclick="stockDel(' + r.coupon_id + ', \'' + esc(r.name).replace(/'/g, "\\'") + '\')">删除</button>'
+          + '</td>'
+          + '</tr>';
+      }).join("")
+      + '</tbody></table>';
+  }).catch(function (err) {
+    box.innerHTML = '<div class="empty">加载失败：' + esc(err.message || err) + '</div>';
+  });
+}
+
+/* ＋/－：输入增减张数，换算成新的发放总量后调 stock_set */
+function stockAdjust(couponId, sign) {
+  var tip = sign > 0 ? "增加几张？" : "减少几张？";
+  var n = parseInt(prompt(tip), 10);
+  if (!n || n < 1) { if (n !== null && !isNaN(n) && n < 1) alert("数量要大于 0 哦"); return; }
+  fetch(PROXY + "/admin/account_detail", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Admin-Password": ADMIN_PASSWORD },
+    body: JSON.stringify({ username: detailUser })
+  }).then(function (r) { return r.json(); })
+    .then(function (d) {
+      var row = (d.coupons || []).find(function (x) { return x.coupon_id === couponId; });
+      if (!row) throw new Error("找不到该券的库存");
+      var granted = row.granted + sign * n;
+      if (granted < 0) granted = 0;
+      if (granted < row.used + row.pending) {
+        if (!confirm("注意：减完后数量（" + granted + "）小于已用+待确认（" + (row.used + row.pending) + "），剩余会显示为 0。\n确定继续吗？")) return;
+      }
+      return stockSet(couponId, granted);
+    })
+    .catch(function (err) { alert("操作失败：" + (err.message || err)); });
+}
+
+function stockSet(couponId, granted) {
+  errBox("");
+  return fetch(PROXY + "/admin/stock_set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Admin-Password": ADMIN_PASSWORD },
+    body: JSON.stringify({ username: detailUser, coupon_id: couponId, granted: granted })
+  }).then(function (r) {
+    return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+  }).then(function (res) {
+    if (!res.ok) throw new Error((res.d && res.d.error) || "接口返回错误");
+    renderDetail();
+    loadAccounts();
+    if (overviewData) load();
+  });
+}
+
+function stockDel(couponId, name) {
+  if (!confirm("确定从「" + detailUser + "」删除「" + name + "」的持券记录吗？\n（使用记录保留）")) return;
+  errBox("");
+  fetch(PROXY + "/admin/stock_del", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Admin-Password": ADMIN_PASSWORD },
+    body: JSON.stringify({ username: detailUser, coupon_id: couponId })
+  }).then(function (r) {
+    return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+  }).then(function (res) {
+    if (!res.ok) throw new Error((res.d && res.d.error) || "接口返回错误");
+    renderDetail();
+    loadAccounts();
+    if (overviewData) load();
+  }).catch(function (err) {
+    alert("删除失败：" + (err.message || err));
+  });
+}
 
 function changePass(u) {
   var p = prompt("给账号「" + u + "」设置新密码：");
