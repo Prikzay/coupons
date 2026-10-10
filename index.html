@@ -92,14 +92,16 @@
 
 <body class="bg-gradient-to-b from-blush via-cream to-blush font-sans text-cocoa select-none">
 
-  <!-- ============ 口令登录屏 ============ -->
+  <!-- ============ 账号密码登录屏 ============ -->
   <div id="loginScreen" class="fixed inset-0 z-40 bg-gradient-to-b from-blush via-cream to-blush flex items-center justify-center px-8">
     <div class="w-full max-w-[300px] bg-white/90 rounded-3xl shadow-xl shadow-rose/20 p-8 text-center">
       <div class="text-5xl mb-3">💌</div>
       <p class="text-[10px] tracking-[6px] text-rose/70 mb-1">LOVE COUPONS</p>
       <h1 class="text-xl font-bold text-roseg mb-1">情侣兑换券卡包</h1>
-      <p class="text-xs text-cocoa/60 mb-6">只有他知道口令哦</p>
-      <input id="passcodeInput" type="text" placeholder="输入口令"
+      <p class="text-xs text-cocoa/60 mb-6">输入账号密码解锁</p>
+      <input id="userInput" type="text" placeholder="账号" autocomplete="username"
+        class="w-full text-center py-3 rounded-full border border-rose/30 bg-white text-base text-cocoa placeholder-cocoa/30 outline-none focus:border-rose mb-3" />
+      <input id="passInput" type="password" placeholder="密码" autocomplete="current-password"
         class="w-full text-center py-3 rounded-full border border-rose/30 bg-white text-base text-cocoa placeholder-cocoa/30 outline-none focus:border-rose mb-3" />
       <button id="loginBtn" onclick="doLogin()"
         class="w-full py-3 rounded-full bg-gradient-to-r from-rose to-roseg text-white text-base font-bold shadow-lg shadow-rose/40 active:scale-95 transition">
@@ -226,7 +228,12 @@
 
     // 云函数地址（中转解决跨域，数据库为唯一数据源）
     const API = 'https://prizay-d5g0umrw5133d1dbc.service.tcloudbase.com/coupons-proxy';
-    const PASSCODE_KEY = 'couponsPasscode';
+    const AUTH_KEY = 'couponsAuth'; // localStorage 存 { user, pass }
+
+    /** 读取本地保存的登录信息 */
+    function getAuth() {
+      try { return JSON.parse(localStorage.getItem(AUTH_KEY)) || {}; } catch (e) { return {}; }
+    }
 
     // 券数据（效果 + 备注，与数据库 coupon_id 1~12 一一对应）
     const couponList = [
@@ -253,9 +260,10 @@
     // 当前展示的券下标
     let currentIndex = 0;
 
-    /** 带口令的 API 请求封装（口令放 body，中文过不了请求头） */
+    /** 带登录信息的 API 请求封装（账号密码放 body，中文过不了请求头） */
     async function api(path, opts = {}) {
-      const body = Object.assign({ passcode: localStorage.getItem(PASSCODE_KEY) || '' }, JSON.parse(opts.body || '{}'));
+      const auth = getAuth();
+      const body = Object.assign({ user: auth.user || '', pass: auth.pass || '' }, JSON.parse(opts.body || '{}'));
       const res = await fetch(API + path, Object.assign({}, opts, {
         headers: Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {}),
         body: JSON.stringify(body),
@@ -277,31 +285,34 @@
     }
 
     /* ================================================================
-     * 口令登录
+     * 账号密码登录
      * ================================================================ */
 
-    /** 登录（也用于 localStorage 口令自动登录），silent=true 时不显示加载/报错 */
+    /** 登录（也用于 localStorage 自动登录），silent=true 时不显示加载/报错 */
     async function doLogin(silent) {
-      const input = document.getElementById('passcodeInput');
+      const userInput = document.getElementById('userInput');
+      const passInput = document.getElementById('passInput');
       const err = document.getElementById('loginErr');
       const btn = document.getElementById('loginBtn');
-      const passcode = silent ? (localStorage.getItem(PASSCODE_KEY) || '') : input.value.trim();
-      if (!passcode) { if (!silent) showErr('先输入口令哦'); return; }
+      const saved = getAuth();
+      const user = silent ? (saved.user || '') : userInput.value.trim();
+      const pass = silent ? (saved.pass || '') : passInput.value.trim();
+      if (!user || !pass) { if (!silent) showErr('账号和密码都要填哦'); return; }
       if (!silent) {
         btn.disabled = true; btn.textContent = '解锁中…'; err.classList.add('hidden');
       }
       try {
-        localStorage.setItem(PASSCODE_KEY, passcode);
         const data = await fetch(API + '/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ passcode }),
+          body: JSON.stringify({ user, pass }),
         }).then(r => r.json().then(d => ({ ok: r.ok, d })));
-        if (!data.ok) throw new Error(data.d.error || '口令不对哦');
+        if (!data.ok) throw new Error(data.d.error || '账号或密码不对哦');
+        localStorage.setItem(AUTH_KEY, JSON.stringify({ user, pass }));
         applyStock(data.d.coupons);
         enterMain();
       } catch (e) {
-        localStorage.removeItem(PASSCODE_KEY);
+        localStorage.removeItem(AUTH_KEY);
         if (!silent) showErr(e.message);
       } finally {
         if (!silent) { btn.disabled = false; btn.textContent = '🔓 解锁卡包'; }
@@ -315,9 +326,9 @@
       document.getElementById('mainPage').classList.remove('hidden');
     }
 
-    /** 口令失效：回登录屏 */
+    /** 登录失效：回登录屏 */
     function logout() {
-      localStorage.removeItem(PASSCODE_KEY);
+      localStorage.removeItem(AUTH_KEY);
       document.getElementById('mainPage').classList.add('hidden');
       document.getElementById('loginScreen').style.display = 'flex';
     }
@@ -512,7 +523,7 @@
 
     /** 静默刷新库存数据 */
     async function refreshStock() {
-      const data = await api('/login', { method: 'POST', body: JSON.stringify({ passcode: localStorage.getItem(PASSCODE_KEY) }) });
+      const data = await api('/login', { method: 'POST', body: '{}' });
       applyStock(data.coupons);
     }
 
@@ -535,13 +546,15 @@
       if (e.target === e.currentTarget) closeModal('confirmModal');
     });
 
-    // 口令输入框回车登录
-    document.getElementById('passcodeInput').addEventListener('keydown', e => {
-      if (e.key === 'Enter') doLogin(false);
+    // 输入框回车登录（密码框回车优先）
+    ['userInput', 'passInput'].forEach(id => {
+      document.getElementById(id).addEventListener('keydown', e => {
+        if (e.key === 'Enter') doLogin(false);
+      });
     });
 
-    // 初始化：本地存过口令则静默自动登录，否则停在登录屏
-    if (localStorage.getItem(PASSCODE_KEY)) doLogin(true);
+    // 初始化：本地存过登录信息则静默自动登录，否则停在登录屏
+    if (getAuth().user) doLogin(true);
     renderGrid();
     renderTicket();
   </script>
